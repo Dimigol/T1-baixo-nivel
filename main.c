@@ -48,11 +48,11 @@ Img in, out, rec;
 
 // Protótipos
 void load(char* name, Img* pic);
-void confusao(Pixel* img, int tam);
-void confusao_inversa(Pixel* img, int tam);
+void confusao(Pixel* img, size_t tam);
+void confusao_inversa(Pixel* img, size_t tam);
 void difusao(Pixel* orig, Pixel* dest, int w, int h);
 void difusao_inversa(Pixel* orig, Pixel* dest, int w, int h);
-int imagens_iguais(Pixel* a, Pixel* b, int tam);
+int imagens_iguais(Pixel* a, Pixel* b, size_t tam);
 
 int main(int argc, char* argv[]) {
   if (argc < 2) {
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
 
   printf("Processando...\n");
 
-  int tam = in.width * in.height;
+  size_t tam = (size_t)in.width * (size_t)in.height;
 
   // Cria imagem de saida (embaralhada) e imagem recuperada, do mesmo tamanho
   out = in;
@@ -76,6 +76,11 @@ int main(int argc, char* argv[]) {
 
   rec = in;
   rec.pixels = malloc(tam * sizeof(Pixel));
+
+  if (!out.pixels || !rec.pixels) {
+    printf("Erro: memoria insuficiente\n");
+    exit(1);
+  }
 
   //
   // Neste ponto, voce deve implementar os seus algoritmos!
@@ -89,37 +94,45 @@ int main(int argc, char* argv[]) {
 
   // 2) Aplica a difusao, movendo os pixels confundidos de out para rec
   //    (origem e destino separados, para nao sobrescrever pixels que
-  //    ainda nao foram lidos).
+  //    ainda nao foram lidos). rec passa a ser a imagem baguncada.
   difusao(out.pixels, rec.pixels, in.width, in.height);
 
-  // O resultado da ida (C + D) e o que sai em rec neste ponto; copia de
-  // volta para out para gravar "baguncada.png" e liberar rec para a volta.
-  memcpy(out.pixels, rec.pixels, tam * sizeof(Pixel));
-  stbi_write_png("baguncada.png", out.width, out.height, 3, out.pixels, 0);
+  int ok = 1;
+  if (!stbi_write_png("baguncada.png", rec.width, rec.height, 3, rec.pixels,
+                      0)) {
+    printf("Erro: nao foi possivel gravar baguncada.png\n");
+    ok = 0;
+  }
 
   //
   // VOLTA: difusao inversa (D^-1) seguida de confusao inversa (C^-1)
   //
-  // 3) Desfaz a difusao, movendo de out (embaralhada) para rec.
-  difusao_inversa(out.pixels, rec.pixels, in.width, in.height);
+  // 3) Desfaz a difusao, movendo de rec (baguncada) para out.
+  difusao_inversa(rec.pixels, out.pixels, in.width, in.height);
 
-  // 4) Desfaz a confusao "no lugar" em rec.
-  confusao_inversa(rec.pixels, tam);
+  // 4) Desfaz a confusao "no lugar" em out, que passa a ser a recuperada.
+  confusao_inversa(out.pixels, tam);
 
-  stbi_write_png("recuperada.png", rec.width, rec.height, 3, rec.pixels, 0);
+  if (!stbi_write_png("recuperada.png", out.width, out.height, 3, out.pixels,
+                      0)) {
+    printf("Erro: nao foi possivel gravar recuperada.png\n");
+    ok = 0;
+  }
 
   //
   // VERIFICACAO: compara a original com a recuperada, byte a byte
   //
-  if (imagens_iguais(in.pixels, rec.pixels, tam)) {
-    printf("SUCESSO: imagem recuperada e identica a original.\n");
-  } else {
+  if (!imagens_iguais(in.pixels, out.pixels, tam)) {
     printf("FALHA: imagem recuperada difere da original.\n");
+    ok = 0;
+  } else if (ok) {
+    printf("SUCESSO: imagem recuperada e identica a original.\n");
   }
 
   free(in.pixels);
   free(out.pixels);
   free(rec.pixels);
+  return ok ? 0 : 1;
 }
 
 void load(char* name, Img* pic) {
@@ -131,12 +144,17 @@ void load(char* name, Img* pic) {
     printf("Erro de leitura: %s\n", stbi_failure_reason());
     exit(1);
   }
+  // stbi_load devolve em channels o numero de canais do arquivo; os dados
+  // em memoria sao sempre RGB (3 canais).
+  pic->channels = 3;
   printf("Load: %d x %d x %d\n", pic->width, pic->height, pic->channels);
   // Exibe um bloco de 8 x 8 pixels em hexadecimal (teste)
-  for (int i = 0; i < 8; i++) {
-    for (int j = 0; j < 8; j++) {
-      printf("[%02X %02X %02X] ", pic->pixels[i].r, pic->pixels[i].g,
-             pic->pixels[i].b);
+  int lin = pic->height < 8 ? pic->height : 8;
+  int col = pic->width < 8 ? pic->width : 8;
+  for (int i = 0; i < lin; i++) {
+    for (int j = 0; j < col; j++) {
+      Pixel* px = pic->pixels + (size_t)i * pic->width + j;
+      printf("[%02X %02X %02X] ", px->r, px->g, px->b);
     }
     printf("\n");
   }
@@ -146,57 +164,59 @@ void load(char* name, Img* pic) {
 // ======================= CONFUSAO (C) =======================
 //
 // Troca o valor de cada byte por uma funcao dele mesmo (nao move pixels).
-// REGRA TEMPORARIA DE TESTE: inverte cada byte de cor (255 - valor), so
-// para provar que a estrutura de ida/volta funciona. O grupo deve
-// substituir por uma regra autoral (ex.: soma/subtracao ou XOR com uma
-// chave, sempre revertida em confusao_inversa).
-void confusao(Pixel* img, int tam) {
+// REGRA TEMPORARIA DE TESTE: soma uma chave fixa a cada byte (mod 256, pois
+// e unsigned char). O grupo deve substituir por uma regra autoral. A
+// inversa e uma regra DIFERENTE (subtracao), para o teste de ida/volta
+// realmente exercitar a funcao inversa.
+#define CHAVE_CONFUSAO 91
+
+void confusao(Pixel* img, size_t tam) {
   unsigned char* p = (unsigned char*)img;
-  int n = tam * 3;
-  for (int i = 0; i < n; i++) {
-    *(p + i) = 255 - *(p + i);
+  size_t n = tam * 3;
+  for (size_t i = 0; i < n; i++) {
+    *(p + i) = (unsigned char)(*(p + i) + CHAVE_CONFUSAO);
   }
 }
 
-// Desfaz exatamente a confusao acima. Como 255 - x e sua propria inversa,
-// aplicar a mesma operacao de novo recupera o valor original.
-void confusao_inversa(Pixel* img, int tam) {
+// Desfaz exatamente a confusao acima: subtrai a mesma chave (mod 256).
+void confusao_inversa(Pixel* img, size_t tam) {
   unsigned char* p = (unsigned char*)img;
-  int n = tam * 3;
-  for (int i = 0; i < n; i++) {
-    *(p + i) = 255 - *(p + i);
+  size_t n = tam * 3;
+  for (size_t i = 0; i < n; i++) {
+    *(p + i) = (unsigned char)(*(p + i) - CHAVE_CONFUSAO);
   }
 }
 
 //
 // ======================= DIFUSAO (D) =======================
 //
-// Move pixels inteiros de posicao (origem != destino sempre).
-// REGRA TEMPORARIA DE TESTE: espelha a imagem (inverte a ordem dos
-// pixels no buffer). O grupo deve substituir por uma regra autoral que
-// continue sendo uma bijecao (cada posicao de origem vai para uma unica
-// posicao de destino, sem sobrar nem repetir nenhuma).
+// Move pixels inteiros de posicao.
+// REGRA TEMPORARIA DE TESTE: deslocamento circular de DESLOC_DIFUSAO
+// pixels no buffer (o pixel i vai para (i + desloc) % tam). O grupo deve
+// substituir por uma regra autoral que continue sendo uma bijecao (cada
+// posicao de origem vai para uma unica posicao de destino, sem sobrar nem
+// repetir nenhuma).
+#define DESLOC_DIFUSAO 100003
+
 void difusao(Pixel* orig, Pixel* dest, int w, int h) {
-  int tam = w * h;
+  size_t tam = (size_t)w * (size_t)h;
+  size_t desloc = DESLOC_DIFUSAO % tam;
   Pixel* po = orig;
-  Pixel* pd = dest + (tam - 1);
-  for (int i = 0; i < tam; i++) {
-    *pd = *po;
+  for (size_t i = 0; i < tam; i++) {
+    *(dest + (i + desloc) % tam) = *po;
     po++;
-    pd--;
   }
 }
 
-// Desfaz exatamente a difusao acima. Espelhar duas vezes recupera a
-// ordem original dos pixels.
+// Desfaz exatamente a difusao acima: traz de volta o pixel que foi
+// deslocado, lendo da posicao (i + desloc) % tam.
 void difusao_inversa(Pixel* orig, Pixel* dest, int w, int h) {
-  int tam = w * h;
-  Pixel* po = orig;
-  Pixel* pd = dest + (tam - 1);
-  for (int i = 0; i < tam; i++) {
-    *pd = *po;
-    po++;
-    pd--;
+  size_t tam = (size_t)w * (size_t)h;
+  size_t desloc = DESLOC_DIFUSAO % tam;
+  Pixel* pd = dest;
+  for (size_t i = 0; i < tam; i++) {
+    *pd = *(orig + (i + desloc) % tam);
+    pd++;
   }
 }
 
@@ -204,18 +224,27 @@ void difusao_inversa(Pixel* orig, Pixel* dest, int w, int h) {
 // ======================= VERIFICACAO =======================
 //
 // Compara duas imagens byte a byte. Retorna 1 se identicas, 0 se houver
-// qualquer diferenca (e mostra em qual byte, para ajudar a debugar).
-int imagens_iguais(Pixel* a, Pixel* b, int tam) {
+// qualquer diferenca. Mostra so as primeiras diferencas (para ajudar a
+// debugar sem inundar o terminal) e o total no final.
+#define MAX_DIFS_MOSTRADAS 10
+
+int imagens_iguais(Pixel* a, Pixel* b, size_t tam) {
   unsigned char* pa = (unsigned char*)a;
   unsigned char* pb = (unsigned char*)b;
-  int n = tam * 3;
-  int iguais = 1;
-  for (int i = 0; i < n; i++) {
+  size_t n = tam * 3;
+  size_t difs = 0;
+  for (size_t i = 0; i < n; i++) {
     if (*(pa + i) != *(pb + i)) {
-      printf("Diferenca no byte %d: original=%02X recuperada=%02X\n", i,
-             *(pa + i), *(pb + i));
-      iguais = 0;
+      if (difs < MAX_DIFS_MOSTRADAS) {
+        printf("Diferenca no byte %zu: original=%02X recuperada=%02X\n", i,
+               *(pa + i), *(pb + i));
+      }
+      difs++;
     }
   }
-  return iguais;
+  if (difs > MAX_DIFS_MOSTRADAS) {
+    printf("... e mais %zu bytes diferentes (total: %zu)\n",
+           difs - MAX_DIFS_MOSTRADAS, difs);
+  }
+  return difs == 0;
 }
