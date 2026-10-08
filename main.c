@@ -23,7 +23,6 @@ Para executar:
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>  // Para usar strings
-#include <time.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -82,8 +81,6 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
-  //
-  // Neste ponto, voce deve implementar os seus algoritmos!
   //
   // IDA: confusao (C) seguida de difusao (D)
   //
