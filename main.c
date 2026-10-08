@@ -161,63 +161,106 @@ void load(char* name, Img* pic) {
 }
 
 //
+// ======================= GERADOR PSEUDOALEATORIO =======================
+//
+// Gerador xorshift64: a partir de uma semente fixa, produz sempre a mesma
+// sequencia de numeros. Assim a ida e a volta conseguem gerar exatamente
+// as mesmas chaves, sem precisar guardar nada alem da semente.
+#define SEMENTE_CONFUSAO 0x5EED0BA6C0FFEE01ULL
+#define SEMENTE_DIFUSAO 0xD1F0500FBADC0DE5ULL
+
+unsigned long long proximo(unsigned long long* estado) {
+  unsigned long long x = *estado;
+  x ^= x << 13;
+  x ^= x >> 7;
+  x ^= x << 17;
+  *estado = x;
+  return x;
+}
+
+//
 // ======================= CONFUSAO (C) =======================
 //
-// Troca o valor de cada byte por uma funcao dele mesmo (nao move pixels).
-// REGRA TEMPORARIA DE TESTE: soma uma chave fixa a cada byte (mod 256, pois
-// e unsigned char). O grupo deve substituir por uma regra autoral. A
-// inversa e uma regra DIFERENTE (subtracao), para o teste de ida/volta
-// realmente exercitar a funcao inversa.
-#define CHAVE_CONFUSAO 91
+// Troca o valor de cada byte sem mover pixels. Para cada byte b, gera uma
+// chave k (do gerador acima, diferente para cada posicao) e aplica 3 passos:
+//   1) x = b XOR k              (mistura com a chave)
+//   2) x = rotaciona x 3 bits   (espalha os bits dentro do byte)
+//   3) x = x * 167 + k (mod 256)
+// Cada passo e inversivel: XOR desfaz XOR, rotacao para o outro lado desfaz
+// a rotacao e, como 167 e impar, existe 23 tal que 167 * 23 = 1 (mod 256).
+// Como cada byte so depende dele mesmo e da sua posicao, pode ser "no lugar".
+#define ROT_CONFUSAO 3
+#define MULT_CONFUSAO 167
+#define MULT_INV_CONFUSAO 23
 
 void confusao(Pixel* img, size_t tam) {
   unsigned char* p = (unsigned char*)img;
   size_t n = tam * 3;
+  unsigned long long estado = SEMENTE_CONFUSAO;
   for (size_t i = 0; i < n; i++) {
-    *(p + i) = (unsigned char)(*(p + i) + CHAVE_CONFUSAO);
+    unsigned char k = (unsigned char)(proximo(&estado) >> 24);
+    unsigned char x = *(p + i) ^ k;
+    x = (unsigned char)((x << ROT_CONFUSAO) | (x >> (8 - ROT_CONFUSAO)));
+    *(p + i) = (unsigned char)(x * MULT_CONFUSAO + k);
   }
 }
 
-// Desfaz exatamente a confusao acima: subtrai a mesma chave (mod 256).
+// Desfaz a confusao aplicando os passos inversos na ordem contraria:
+// subtrai k e multiplica pelo inverso, rotaciona para a direita, XOR com k.
 void confusao_inversa(Pixel* img, size_t tam) {
   unsigned char* p = (unsigned char*)img;
   size_t n = tam * 3;
+  unsigned long long estado = SEMENTE_CONFUSAO;
   for (size_t i = 0; i < n; i++) {
-    *(p + i) = (unsigned char)(*(p + i) - CHAVE_CONFUSAO);
+    unsigned char k = (unsigned char)(proximo(&estado) >> 24);
+    unsigned char x = (unsigned char)((*(p + i) - k) * MULT_INV_CONFUSAO);
+    x = (unsigned char)((x >> ROT_CONFUSAO) | (x << (8 - ROT_CONFUSAO)));
+    *(p + i) = x ^ k;
   }
 }
 
 //
 // ======================= DIFUSAO (D) =======================
 //
-// Move pixels inteiros de posicao.
-// REGRA TEMPORARIA DE TESTE: deslocamento circular de DESLOC_DIFUSAO
-// pixels no buffer (o pixel i vai para (i + desloc) % tam). O grupo deve
-// substituir por uma regra autoral que continue sendo uma bijecao (cada
-// posicao de origem vai para uma unica posicao de destino, sem sobrar nem
-// repetir nenhuma).
-#define DESLOC_DIFUSAO 100003
+// Move pixels inteiros de posicao. Monta uma permutacao das posicoes
+// 0..tam-1 embaralhando-as com Fisher-Yates (usando o gerador com a semente
+// da difusao). O pixel da posicao i vai para a posicao perm[i]. Como perm
+// contem cada posicao exatamente uma vez, a difusao e uma bijecao.
+size_t* gera_permutacao(size_t tam) {
+  size_t* perm = malloc(tam * sizeof(size_t));
+  if (!perm) {
+    printf("Erro: memoria insuficiente\n");
+    exit(1);
+  }
+  for (size_t i = 0; i < tam; i++) *(perm + i) = i;
+  unsigned long long estado = SEMENTE_DIFUSAO;
+  for (size_t i = tam - 1; i > 0; i--) {
+    size_t j = (size_t)(proximo(&estado) % (i + 1));
+    size_t aux = *(perm + i);
+    *(perm + i) = *(perm + j);
+    *(perm + j) = aux;
+  }
+  return perm;
+}
 
 void difusao(Pixel* orig, Pixel* dest, int w, int h) {
   size_t tam = (size_t)w * (size_t)h;
-  size_t desloc = DESLOC_DIFUSAO % tam;
-  Pixel* po = orig;
+  size_t* perm = gera_permutacao(tam);
   for (size_t i = 0; i < tam; i++) {
-    *(dest + (i + desloc) % tam) = *po;
-    po++;
+    *(dest + *(perm + i)) = *(orig + i);
   }
+  free(perm);
 }
 
-// Desfaz exatamente a difusao acima: traz de volta o pixel que foi
-// deslocado, lendo da posicao (i + desloc) % tam.
+// Desfaz a difusao: gera a mesma permutacao e traz de volta o pixel que
+// foi enviado para perm[i] de volta para a posicao i.
 void difusao_inversa(Pixel* orig, Pixel* dest, int w, int h) {
   size_t tam = (size_t)w * (size_t)h;
-  size_t desloc = DESLOC_DIFUSAO % tam;
-  Pixel* pd = dest;
+  size_t* perm = gera_permutacao(tam);
   for (size_t i = 0; i < tam; i++) {
-    *pd = *(orig + (i + desloc) % tam);
-    pd++;
+    *(dest + i) = *(orig + *(perm + i));
   }
+  free(perm);
 }
 
 //
