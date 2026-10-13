@@ -6,7 +6,7 @@ PROG = bagunceitor
 CC = gcc
 
 # Flags
-CFLAGS = -Iinclude -g # -Wall -g  # Todas as warnings, infos de debug
+CFLAGS = -Iinclude -Wall -g  # Todas as warnings, infos de debug
 LDFLAGS  =
 LIBS     =
 

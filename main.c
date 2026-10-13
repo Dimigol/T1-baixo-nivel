@@ -35,15 +35,16 @@ typedef struct {
   unsigned char r, g, b;
 } Pixel;
 
+// O codigo percorre a imagem como um vetor de bytes (unsigned char*), entao
+// a struct Pixel nao pode ter padding: precisa ocupar exatamente 3 bytes.
+_Static_assert(sizeof(Pixel) == 3, "Pixel deve ocupar exatamente 3 bytes");
+
 // Uma imagem Pixel
 typedef struct {
   int width, height;  // largura, altura
   int channels;       // qtd de canais (geralmente 3, RGB)
   Pixel* pixels;
 } Img;
-
-// As imagens: original, embaralhada (C+D) e recuperada (D^-1 + C^-1)
-Img in, out, rec;
 
 // Protótipos
 void load(char* name, Img* pic);
@@ -58,6 +59,10 @@ int main(int argc, char* argv[]) {
     printf("bagunceitor [origem]\n");
     exit(1);
   }
+
+  // As imagens: in = original, rec = embaralhada (C + D) e
+  // out = buffer de trabalho, que no final guarda a recuperada (D^-1 + C^-1)
+  Img in, out, rec;
 
   // Carrega a imagem original
   load(argv[1], &in);
@@ -126,7 +131,7 @@ int main(int argc, char* argv[]) {
     printf("SUCESSO: imagem recuperada e identica a original.\n");
   }
 
-  free(in.pixels);
+  stbi_image_free(in.pixels);  // alocada pelo stbi_load
   free(out.pixels);
   free(rec.pixels);
   return ok ? 0 : 1;

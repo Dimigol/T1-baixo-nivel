@@ -2,3 +2,4 @@
 bagunceitor
 bagunceitor.exe
 *.png
+!docs/*.png

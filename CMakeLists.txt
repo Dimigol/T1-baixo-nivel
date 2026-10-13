@@ -2,7 +2,6 @@ cmake_minimum_required (VERSION 2.8.9)
 
 project(bagunceitor)
 
-SET(CMAKE_CXX_FLAGS "-std=c++11 -stdlib=libc++")
 
 set(INCLUDE_DIRS include)
 
