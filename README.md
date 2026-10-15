@@ -3,7 +3,7 @@
 **Disciplina:** Programação de Baixo Nivel
 **Alunos:** Dimitri Callegari Jadovski e João Gabriel Cirne
 **Repositório:** https://github.com/Dimigol/T1-baixo-nivel
-**Vídeo de apresentação:** _[link não listado do YouTube — TODO]_
+**Vídeo de apresentação:** https://youtu.be/NR_XKA4Wm8U
 
 ---
 
@@ -120,6 +120,20 @@ Gera-se a **mesma** permutação (mesma semente) e faz-se o caminho contrário:
 - O vetor `perm` é gerado novamente na volta em vez de ser guardado, pois só a
   semente é necessária.
 
+### O que é autoral na difusão
+
+O Fisher-Yates é um algoritmo clássico de embaralhamento, que usamos apenas
+como ferramenta para gerar uma permutação sem repetições. A regra de difusão
+em si é a forma como o grupo o combinou com o resto do trabalho. Em vez de
+usar o `rand()` da biblioteca, que muda entre sistemas e compiladores, ligamos
+o embaralhamento ao nosso próprio gerador xorshift, e a semente
+`SEMENTE_DIFUSAO` passa a funcionar como chave: quem não conhece a semente não
+sabe para onde cada pixel foi. A difusão usa uma semente diferente da
+confusão, para que as duas etapas sejam independentes. Além disso, ela move
+pixels inteiros em vez de bytes soltos: só muda posições e deixa toda a
+alteração de valores para a confusão, o que mantém as duas etapas com papéis
+separados e fáceis de inverter.
+
 **Observação:** `rand % (i+1)` tem um viés de módulo desprezível (o gerador
 tem 64 bits e a imagem ~1,2 milhão de pixels).
 
@@ -223,3 +237,25 @@ As principais dificuldades foram:
 Por fim, a verificação byte a byte foi essencial: uma imagem "parecida" com a
 original não basta, e só a comparação exata garante que todas as operações são
 de fato inversíveis.
+
+## 10. Uso de Inteligência Artificial
+
+Durante o trabalho foi utilizado o assistente de IA **Claude** (Anthropic) como
+apoio, nos seguintes pontos:
+
+- **Organização do relatório:** sugestões de estrutura e de divisão em seções
+  deste README, para deixar a explicação das regras, da manipulação de memória
+  e da verificação mais clara.
+- **Roteiro do vídeo:** ajuda para dividir a apresentação em cenas, distribuir
+  as falas entre os integrantes e definir o que mostrar na tela em cada parte
+  (imagem original, embaralhada, recuperada e a verificação byte a byte).
+- **Melhoria da regra autoral:** discussão de ideias para tornar as regras de
+  confusão e difusão mais eficazes. Por exemplo: por que trocar o primeiro
+  pixel com o último (inverter a imagem) não esconde o conteúdo, por que o
+  multiplicador da transformação afim precisa ser ímpar para ter inverso
+  módulo 256, e como espalhar os pixels pela imagem toda em vez de deslocar
+  apenas linhas ou colunas.
+
+As sugestões foram avaliadas pelo grupo, e as regras finais foram escolhidas,
+implementadas e testadas pelos integrantes, que conseguem explicar e
+justificar cada etapa.

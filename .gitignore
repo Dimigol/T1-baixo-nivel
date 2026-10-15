@@ -3,3 +3,5 @@ bagunceitor
 bagunceitor.exe
 *.png
 !docs/*.png
+.DS_Store
+ROTEIRO_VIDEO.md
